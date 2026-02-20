@@ -1,0 +1,68 @@
+{
+  // This is a devcontainer that can be used for interactively testing my coder setup and serves as a base for new projects as well
+  // Remember to change the name below to match the project
+  "name": "LLM Secure Browse",
+  // Use Coder's enterprise base image for proper user setup and permissions
+  "image": "codercom/enterprise-base:ubuntu",
+  
+  // Features to install
+  "features": {
+    // Install common utilities (upgradePackages only - user already configured by Coder)
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "upgradePackages": true
+    },
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "18",
+      "nodeGypDependencies": true,
+      "installYarnUsingApt": false
+    },
+    "ghcr.io/devcontainers/features/git:1": {
+      "version": "latest"
+    }
+  },
+
+  // VS Code settings
+  "customizations": {
+    "vscode": {
+      "settings": {
+        // TypeScript/JavaScript settings
+        "[typescript]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode",
+          "editor.formatOnSave": true
+        },
+        "[typescriptreact]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode",
+          "editor.formatOnSave": true
+        },
+        "[json]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        },
+        
+        // Editor settings
+        "editor.rulers": [100],
+        "files.trimTrailingWhitespace": true,
+        "files.insertFinalNewline": true
+      },
+      
+      "extensions": [
+       
+        // TypeScript/JavaScript extensions
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        
+        // General development extensions
+        "eamodio.gitlens",
+        "github.copilot",
+        "github.copilot-chat",
+        "ms-vscode.live-server"
+      ]
+    }
+  },
+
+  // Run as non-root user (coder user already configured by Coder's base image)
+  "remoteUser": "coder",
+
+  // Lifecycle scripts
+  "onCreateCommand": "echo 'Container created. Installing dependencies...'",
+  
+}
