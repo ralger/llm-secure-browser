@@ -25,6 +25,8 @@
   "dependencies": {
     "@fastify/formbody": "^8.0.2",
     "@fastify/sensible": "^6.0.4",
+    "@fastify/swagger": "^9.7.0",
+    "@fastify/swagger-ui": "^5.2.5",
     "dotenv": "^17.3.1",
     "fastify": "^5.7.4",
     "playwright": "^1.58.2",

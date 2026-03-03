@@ -10,18 +10,60 @@ interface RoutesOptions {
   credentialProvider: ICredentialProvider;
 }
 
+// ── Shared schema fragments ─────────────────────────────────────────────────
+
+const ChildInfoSchema = {
+  type: 'object',
+  properties: {
+    name: { type: 'string', example: 'Samuel' },
+    consumerId: { type: 'string', example: '22780839' },
+    balanceText: { type: 'string', example: 'Dinner money balance: £0.10' },
+    balanceGbp: { type: 'number', example: 0.1 },
+  },
+};
+
+const MealEntrySchema = {
+  type: 'object',
+  properties: {
+    date: { type: 'string', format: 'date', example: '2026-02-24' },
+    dayLabel: { type: 'string', example: 'Tue 24 Feb' },
+    session: { type: 'string', enum: ['morning', 'lunch', 'unknown'], example: 'morning' },
+    item: { type: 'string', example: 'CHICKEN BURRITO' },
+    taken: { type: 'boolean', example: true },
+  },
+};
+
+const ErrorSchema = {
+  type: 'object',
+  properties: { error: { type: 'string' } },
+};
+
+// ── Routes ──────────────────────────────────────────────────────────────────
+
 export const parentPayRoutes: FastifyPluginAsync<RoutesOptions> = async (app, options) => {
   const { credentialProvider } = options;
   const siteId = PARENTPAY_CONFIG.siteId;
 
-  /**
-   * GET /api/parentpay/balances
-   * Returns dinner money balances for all children + parent account credit.
-   *
-   * Response:
-   *   { site, parentAccountBalanceGbp, children: [{ name, consumerId, balanceText, balanceGbp }] }
-   */
-  app.get('/balances', async (_req, reply) => {
+  app.get('/balances', {
+    schema: {
+      tags: ['parentpay'],
+      summary: 'Get dinner money balances',
+      description:
+        'Returns the current dinner money balance for each child and the Parent Account credit. ' +
+        'Logs in if no active session exists. Typical response time: 5–15 seconds.',
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            site: { type: 'string', example: 'parentpay' },
+            parentAccountBalanceGbp: { type: 'number', example: 46.0 },
+            children: { type: 'array', items: ChildInfoSchema },
+          },
+        },
+        500: ErrorSchema,
+      },
+    },
+  }, async (_req, reply) => {
     try {
       const result = await getBalances(credentialProvider);
       return { site: siteId, ...result };
@@ -33,21 +75,55 @@ export const parentPayRoutes: FastifyPluginAsync<RoutesOptions> = async (app, op
     }
   });
 
-  /**
-   * GET /api/parentpay/meals/:consumerId
-   * Returns taken meal entries for the specified child over the last N weeks.
-   *
-   * Query params:
-   *   weeks  (default: 4) — number of past weeks to retrieve
-   *
-   * Response:
-   *   { site, consumerId, weeks, meals: [{ date, dayLabel, session, item, taken }] }
-   */
   app.get<{ Params: { consumerId: string }; Querystring: { weeks?: string } }>(
     '/meals/:consumerId',
+    {
+      schema: {
+        tags: ['parentpay'],
+        summary: 'Get taken meal history',
+        description:
+          'Returns items each child took (morning snacks and lunch) for the last N weeks. ' +
+          'One browser page is loaded per week — allow 5–10 seconds per week requested. ' +
+          'Item prices are not available on the ParentPay front-end.',
+        params: {
+          type: 'object',
+          required: ['consumerId'],
+          properties: {
+            consumerId: {
+              type: 'string',
+              description: 'Child consumer ID (see GET /balances to discover IDs)',
+              example: '22780839',
+            },
+          },
+        },
+        querystring: {
+          type: 'object',
+          properties: {
+            weeks: {
+              type: 'string',
+              description: 'Number of past weeks to retrieve (default: 4, max: 12)',
+              example: '4',
+            },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              site: { type: 'string', example: 'parentpay' },
+              consumerId: { type: 'string', example: '22780839' },
+              weeks: { type: 'number', example: 4 },
+              meals: { type: 'array', items: MealEntrySchema },
+            },
+          },
+          400: ErrorSchema,
+          500: ErrorSchema,
+        },
+      },
+    },
     async (req, reply) => {
       const { consumerId } = req.params;
-      const weeks = Math.min(parseInt(req.query.weeks ?? '4', 10), 12); // cap at 12 weeks
+      const weeks = Math.min(parseInt(req.query.weeks ?? '4', 10), 12);
       if (isNaN(weeks) || weeks < 1) {
         return reply.badRequest('weeks must be a positive integer (max 12)');
       }
@@ -61,19 +137,52 @@ export const parentPayRoutes: FastifyPluginAsync<RoutesOptions> = async (app, op
     },
   );
 
-  /**
-   * POST /api/parentpay/topup
-   * Tops up a child's dinner money from the Parent Account credit.
-   * Uses the existing Parent Account balance — no new card charge.
-   *
-   * Body: { consumerId: string, amountGbp: number }
-   * Response: { success, message, newBalanceGbp? }
-   *
-   * NOTE: Do not send more than the available Parent Account balance.
-   *       Minimum: £0.01 (system), Maximum: £150.00 per transaction.
-   */
   app.post<{ Body: { consumerId: string; amountGbp: number } }>(
     '/topup',
+    {
+      schema: {
+        tags: ['parentpay'],
+        summary: 'Top up dinner money',
+        description:
+          "Transfers money from the Parent Account credit to a child's dinner money balance. " +
+          'No new card charge occurs — uses the pre-loaded Parent Account wallet. ' +
+          'Check GET /balances first to confirm parentAccountBalanceGbp is sufficient.',
+        body: {
+          type: 'object',
+          required: ['consumerId', 'amountGbp'],
+          properties: {
+            consumerId: {
+              type: 'string',
+              description: 'Child consumer ID',
+              example: '22780839',
+            },
+            amountGbp: {
+              type: 'number',
+              minimum: 0.01,
+              maximum: 150,
+              description: 'Amount in GBP (min £0.01 system / max £150.00 per transaction)',
+              example: 5.0,
+            },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean', example: true },
+              message: {
+                type: 'string',
+                example: 'Top-up of £5.00 submitted successfully.',
+              },
+              newBalanceGbp: { type: 'number', nullable: true },
+            },
+          },
+          400: ErrorSchema,
+          422: ErrorSchema,
+          500: ErrorSchema,
+        },
+      },
+    },
     async (req, reply) => {
       const { consumerId, amountGbp } = req.body ?? {};
       if (!consumerId || typeof amountGbp !== 'number') {
@@ -87,18 +196,35 @@ export const parentPayRoutes: FastifyPluginAsync<RoutesOptions> = async (app, op
         return result;
       } catch (err) {
         app.log.error(err);
-        return reply.internalServerError('Top-up failed. Check site availability and Parent Account balance.');
+        return reply.internalServerError(
+          'Top-up failed. Check site availability and Parent Account balance.',
+        );
       }
     },
   );
 
-  /**
-   * POST /api/parentpay/session/refresh
-   * Clears the cached browser session, forcing a fresh login on the next request.
-   */
-  app.post('/session/refresh', async () => {
+  app.post('/session/refresh', {
+    schema: {
+      tags: ['parentpay'],
+      summary: 'Force session re-authentication',
+      description:
+        'Closes the cached Playwright browser context for ParentPay and removes it from the ' +
+        'session store. The next request to any ParentPay endpoint will trigger a fresh login. ' +
+        'Use this if the session has become stale (e.g. after a ParentPay server-side timeout).',
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            message: {
+              type: 'string',
+              example: 'Session cleared. Next request will re-authenticate.',
+            },
+          },
+        },
+      },
+    },
+  }, async () => {
     await SessionStore.getInstance().clearSession(siteId);
     return { message: 'Session cleared. Next request will re-authenticate.' };
   });
 };
-
