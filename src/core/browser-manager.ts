@@ -28,12 +28,17 @@ export class BrowserManager {
       ...options,
     });
 
-    process.once('SIGTERM', () => this.teardown());
-    process.once('SIGINT', () => this.teardown());
+    this.browser.on('disconnected', () => {
+      console.error('[BrowserManager] Browser disconnected unexpectedly — will re-launch on next request');
+      this.browser = null;
+    });
+
+    process.once('SIGTERM', () => void this.teardown());
+    process.once('SIGINT', () => void this.teardown());
   }
 
   async createContext(): Promise<BrowserContext> {
-    if (!this.browser) {
+    if (!this.browser || !this.browser.isConnected()) {
       await this.launch();
     }
     return this.browser!.newContext({

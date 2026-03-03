@@ -21,6 +21,14 @@ export class LoginPage {
 
   async login(username: string, password: string): Promise<LoginResult> {
     await this.page.waitForSelector(selectors.login.usernameInput, { timeout: 10_000 });
+
+    // Dismiss the OneTrust cookie consent banner if present — it overlays the login button
+    const acceptCookies = this.page.locator('#onetrust-accept-btn-handler');
+    if (await acceptCookies.isVisible({ timeout: 3_000 }).catch(() => false)) {
+      await acceptCookies.click();
+      await this.page.waitForSelector('#onetrust-consent-sdk', { state: 'hidden', timeout: 5_000 }).catch(() => {});
+    }
+
     await this.page.fill(selectors.login.usernameInput, username);
     await this.page.fill(selectors.login.passwordInput, password);
     await this.page.click(selectors.login.submitButton);

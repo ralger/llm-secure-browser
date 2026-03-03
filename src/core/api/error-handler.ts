@@ -8,11 +8,6 @@ export function registerErrorHandler(app: FastifyInstance): void {
   app.setErrorHandler((error: FastifyError, _request, reply) => {
     const status = error.statusCode ?? 500;
     app.log.error(error);
-    reply.status(status).send({
-      error: {
-        message: error.message,
-        code: error.code ?? 'INTERNAL_ERROR',
-      },
-    });
+    reply.status(status).send({ error: error.message });
   });
 }

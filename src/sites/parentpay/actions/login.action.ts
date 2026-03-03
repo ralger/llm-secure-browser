@@ -23,8 +23,13 @@ export async function ensureLoggedIn(
   const entry = sessionStore.get(siteId);
 
   if (entry && entry.loggedIn && entry.metadata?.basePath) {
-    const page = await entry.context.newPage();
-    return { context: entry.context, page, basePath: entry.metadata.basePath as string };
+    try {
+      const page = await entry.context.newPage();
+      return { context: entry.context, page, basePath: entry.metadata.basePath as string };
+    } catch {
+      // Context was closed (e.g. browser crashed or idle reaper ran) — fall through to re-login
+      await sessionStore.clearSession(siteId);
+    }
   }
 
   // No session or not logged in — create a fresh context

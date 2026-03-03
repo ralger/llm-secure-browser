@@ -6,6 +6,11 @@ import { registerErrorHandler } from './error-handler.js';
 
 export async function createServer(): Promise<FastifyInstance> {
   const app = Fastify({
+    ajv: {
+      customOptions: {
+        strict: false, // allows OpenAPI `example` fields in schemas
+      },
+    },
     logger: {
       transport:
         process.env.NODE_ENV !== 'production'
