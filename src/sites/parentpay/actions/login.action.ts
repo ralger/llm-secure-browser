@@ -9,22 +9,22 @@ const { siteId, credentials } = PARENTPAY_CONFIG;
 
 /**
  * Ensures the ParentPay session is authenticated.
- * Returns an active Page ready for use.
+ * Returns an active Page and the user-specific basePath for URL construction.
  *
  * - Re-uses an existing logged-in context if available.
  * - Creates a new context and logs in if not.
  */
 export async function ensureLoggedIn(
   credentialProvider: ICredentialProvider,
-): Promise<{ context: BrowserContext; page: Page }> {
+): Promise<{ context: BrowserContext; page: Page; basePath: string }> {
   const sessionStore = SessionStore.getInstance();
   const browserManager = BrowserManager.getInstance();
 
-  let entry = sessionStore.get(siteId);
+  const entry = sessionStore.get(siteId);
 
-  if (entry && entry.loggedIn) {
+  if (entry && entry.loggedIn && entry.metadata?.basePath) {
     const page = await entry.context.newPage();
-    return { context: entry.context, page };
+    return { context: entry.context, page, basePath: entry.metadata.basePath as string };
   }
 
   // No session or not logged in — create a fresh context
@@ -42,9 +42,10 @@ export async function ensureLoggedIn(
   const password = await credentialProvider.get(credentials.passwordKey);
 
   await loginPage.navigate();
-  await loginPage.login(username, password);
+  const { basePath } = await loginPage.login(username, password);
 
-  sessionStore.markLoggedIn(siteId);
+  sessionStore.markLoggedIn(siteId, { basePath });
 
-  return { context, page };
+  return { context, page, basePath };
 }
+

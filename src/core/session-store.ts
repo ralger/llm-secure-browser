@@ -4,6 +4,8 @@ interface SessionEntry {
   context: BrowserContext;
   loggedIn: boolean;
   createdAt: Date;
+  /** Arbitrary site-specific data stored alongside the session */
+  metadata: Record<string, unknown>;
 }
 
 /**
@@ -26,7 +28,7 @@ export class SessionStore {
   }
 
   set(siteId: string, context: BrowserContext, loggedIn = false): void {
-    this.sessions.set(siteId, { context, loggedIn, createdAt: new Date() });
+    this.sessions.set(siteId, { context, loggedIn, createdAt: new Date(), metadata: {} });
   }
 
   get(siteId: string): SessionEntry | undefined {
@@ -37,9 +39,12 @@ export class SessionStore {
     return this.sessions.get(siteId)?.loggedIn ?? false;
   }
 
-  markLoggedIn(siteId: string): void {
+  markLoggedIn(siteId: string, metadata: Record<string, unknown> = {}): void {
     const entry = this.sessions.get(siteId);
-    if (entry) entry.loggedIn = true;
+    if (entry) {
+      entry.loggedIn = true;
+      entry.metadata = { ...entry.metadata, ...metadata };
+    }
   }
 
   async clearSession(siteId: string): Promise<void> {

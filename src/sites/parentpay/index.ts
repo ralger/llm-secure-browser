@@ -7,6 +7,8 @@ import { PARENTPAY_CONFIG } from './config.js';
 const credentialProvider = new EnvCredentialProvider();
 
 const plugin: FastifyPluginAsync = async (app) => {
+  // Fastify requires explicit body parsing for POST routes
+  await app.register(import('@fastify/formbody'));
   await app.register(parentPayRoutes, { credentialProvider });
 };
 

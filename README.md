@@ -52,19 +52,48 @@ npm run dev
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/health` | Liveness probe |
-| `GET` | `/api/parentpay/balances` | Current lunch money balances for all children |
+| `GET` | `/api/parentpay/balances` | Dinner money balances for all children + parent account credit |
+| `GET` | `/api/parentpay/meals/:consumerId?weeks=4` | Taken meal entries for the last N weeks |
+| `POST` | `/api/parentpay/topup` | Top up dinner money from Parent Account credit |
 | `POST` | `/api/parentpay/session/refresh` | Force re-authentication on next request |
 
-### Example response — `/api/parentpay/balances`
+### `GET /api/parentpay/balances`
 ```json
 {
   "site": "parentpay",
-  "data": [
-    { "name": "Child One", "balance": "£4.50" },
-    { "name": "Child Two", "balance": "£2.20" }
+  "parentAccountBalanceGbp": 46.00,
+  "children": [
+    { "name": "Samuel", "consumerId": "22780839", "balanceText": "Dinner money balance: £0.10", "balanceGbp": 0.10 },
+    { "name": "Emmanuel", "consumerId": "22780840", "balanceText": "Dinner money balance: £3.00", "balanceGbp": 3.00 }
   ]
 }
 ```
+
+### `GET /api/parentpay/meals/:consumerId?weeks=4`
+```json
+{
+  "site": "parentpay",
+  "consumerId": "22780839",
+  "weeks": 4,
+  "meals": [
+    { "date": "2026-02-23", "dayLabel": "Mon 23 Feb", "session": "morning", "item": "Simple Baguette", "taken": true },
+    { "date": "2026-02-24", "dayLabel": "Tue 24 Feb", "session": "morning", "item": "CHICKEN BURRITO", "taken": true },
+    { "date": "2026-02-24", "dayLabel": "Tue 24 Feb", "session": "lunch",   "item": "FLAVOURED MILK",  "taken": true }
+  ]
+}
+```
+
+### `POST /api/parentpay/topup`
+```json
+// Request body
+{ "consumerId": "22780839", "amountGbp": 5.00 }
+
+// Response
+{ "success": true, "message": "Top-up of £5.00 submitted successfully." }
+```
+
+> **Note:** Top-ups use the pre-loaded Parent Account balance only. No new card charge occurs.
+> Minimum: £0.01 (system). Maximum: £150.00 per transaction.
 
 ## Credentials
 
