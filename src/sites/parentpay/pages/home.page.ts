@@ -27,7 +27,7 @@ export class HomePage {
 
   async navigate(): Promise<void> {
     const url = `${appBaseUrl}${paths.home(this.basePath)}`;
-    await this.page.goto(url, { waitUntil: 'domcontentloaded' });
+    await this.page.goto(url, { waitUntil: 'networkidle' });
   }
 
   async getChildren(): Promise<ChildInfo[]> {
@@ -60,6 +60,8 @@ export class HomePage {
   }
 
   async getParentAccountBalance(): Promise<number> {
+    // Wait for the navbar credit link to be populated (loaded via JS after page render)
+    await this.page.waitForSelector(selectors.home.parentCreditLink, { timeout: 8_000 }).catch(() => {});
     const creditLink = await this.page.$(selectors.home.parentCreditLink);
     const text = await creditLink?.textContent() ?? '';
     const match = text.match(/£([\d.]+)/);

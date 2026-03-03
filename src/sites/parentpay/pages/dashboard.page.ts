@@ -1,17 +1,7 @@
 import { Page } from 'playwright';
 import { PARENTPAY_CONFIG } from '../config.js';
 
-const { appBaseUrl, paths } = PARENTPAY_CONFIG;
-
-export interface PaymentItem {
-  name: string;
-  /** Running balance (e.g. for dinner money). Null for fixed-price items. */
-  balanceGbp: number | null;
-  /** Fixed price for one-off items. Null for balance-based items. */
-  priceGbp: number | null;
-  /** The internal item ID — used when initiating a top-up */
-  itemId: string;
-}
+const { appBaseUrl, paths, selectors } = PARENTPAY_CONFIG;
 
 export interface TopUpResult {
   success: boolean;
@@ -20,87 +10,87 @@ export interface TopUpResult {
 }
 
 /**
- * Page Object Model for the ParentPay child summary page.
- * URL: /V3Payer4W3/Home/ChildSummary.aspx?ConsumerId={id}
+ * Page Object Model for the ParentPay Payment Items page.
+ * URL: /V3Payer4W3/Home/PaymentItems/PaymentItems.aspx?consumerId={id}
  *
- * Shows payment items (including dinner money balance) and recent meal activity.
+ * Shows all active payment items for a child with inline top-up form.
+ * Each item card lives in a repeater: #body_body_rptPaymentItems_PaymentItem_N
+ * Clicking the View link expands an inline form with #edit-amount input.
+ * Successful payment redirects to PostPaymentReceipt.aspx.
  */
-export class ChildSummaryPage {
+export class PaymentItemsPage {
   constructor(
     private readonly page: Page,
     private readonly basePath: string,
   ) {}
 
   async navigate(consumerId: string): Promise<void> {
-    const url = `${appBaseUrl}${paths.childSummary(this.basePath, consumerId)}`;
-    await this.page.goto(url, { waitUntil: 'domcontentloaded' });
+    const url = `${appBaseUrl}${paths.paymentItems(this.basePath, consumerId)}`;
+    await this.page.goto(url, { waitUntil: 'networkidle' });
+    await this._dismissOverlays();
   }
 
-  /** Returns all visible payment items on the child summary page */
-  async getPaymentItems(): Promise<PaymentItem[]> {
-    await this.page.waitForSelector('dl', { timeout: 10_000 });
-    return this.page.evaluate(() => {
-      const items: Array<{ name: string; balanceGbp: number | null; priceGbp: number | null; itemId: string }> = [];
-      // Each payment item card has a containing div with a View button whose id is the item id
-      const viewButtons = document.querySelectorAll<HTMLButtonElement>('button[id]');
-      viewButtons.forEach((btn) => {
-        if (!btn.id || isNaN(Number(btn.id))) return;
-        const card = btn.closest('[class]') || btn.parentElement?.parentElement;
-        if (!card) return;
-        const dds = card.querySelectorAll('dd');
-        const name = dds[0]?.textContent?.trim() ?? '';
-        const balanceText = dds[1]?.textContent?.trim() ?? '';
-        const priceEl = btn.previousElementSibling;
-        const priceText = priceEl?.textContent?.trim() ?? '';
-        const balanceMatch = balanceText.match(/£([\d.]+)/);
-        const priceMatch = priceText.match(/£([\d.]+)/);
-        items.push({
-          name,
-          balanceGbp: balanceMatch ? parseFloat(balanceMatch[1]) : null,
-          priceGbp: priceMatch && !balanceMatch ? parseFloat(priceMatch[1]) : null,
-          itemId: btn.id,
-        });
+  /** Dismiss any overlays (cookie consent, feedback widgets) that block clicks */
+  private async _dismissOverlays(): Promise<void> {
+    // OneTrust cookie consent
+    const cookieBtn = this.page.locator('#onetrust-accept-btn-handler');
+    if (await cookieBtn.isVisible({ timeout: 2_000 }).catch(() => false)) {
+      await cookieBtn.click();
+      await this.page.waitForSelector('#onetrust-consent-sdk', { state: 'hidden', timeout: 5_000 }).catch(() => {});
+    }
+    // Usabilla / GetFeedback overlay — hide via JS (no reliable close button)
+    await this.page.evaluate(() => {
+      document.querySelectorAll('.usabilla__overlay, [title="Usabilla Feedback Form"]').forEach((el) => {
+        (el as HTMLElement).style.display = 'none';
       });
-      return items;
     });
   }
 
-  /** Returns the dinner money payment item (School Dinner Money) for this child */
-  async getDinnerMoneyItem(): Promise<PaymentItem | null> {
-    const items = await this.getPaymentItems();
-    return (
-      items.find((i) => i.name.includes(PARENTPAY_CONFIG.selectors.childSummary.dinnerMoneyItemName)) ?? null
-    );
-  }
-
   /**
-   * Top up the dinner money balance via the Parent Account credit.
-   * Safe: only triggers "Pay by Parent Account" which deducts from the pre-loaded Parent Account balance.
-   * @param itemId  The payment item ID (from getDinnerMoneyItem)
-   * @param amountGbp  Amount in GBP (minimum £0.01)
+   * Tops up the School Dinner Money balance using the Parent Account credit.
+   * Finds the dinner money card, clicks View, fills amount, submits.
    */
-  async topUpByParentAccount(itemId: string, amountGbp: number): Promise<TopUpResult> {
-    // Click the View button to open the payment panel
-    await this.page.click(`button[id="${itemId}"]`);
+  async topUpDinnerMoney(amountGbp: number): Promise<TopUpResult> {
+    const dinnerMoneyName = selectors.childSummary.dinnerMoneyItemName;
 
-    // Wait for the amount input
-    const amountSelector = 'input[aria-label*="amount" i], #edit-amount, input[id*="amount"]';
-    await this.page.waitForSelector(amountSelector, { timeout: 5_000 });
+    // Find the item card for School Dinner Money (repeater items: PaymentItem_0, _1, ...)
+    const dinnerCard = this.page
+      .locator('[id*="rptPaymentItems_PaymentItem_"]')
+      .filter({ hasText: dinnerMoneyName });
 
-    await this.page.fill(amountSelector, amountGbp.toFixed(2));
+    if ((await dinnerCard.count()) === 0) {
+      return { success: false, message: `No "${dinnerMoneyName}" payment item found` };
+    }
 
-    // Click "Pay by Parent Account"
-    const payBtn = this.page.getByRole('button', { name: /Pay by Parent Account/i });
-    await payBtn.click();
+    // Click the View link to open the inline payment form
+    await dinnerCard.getByRole('link', { name: 'View' }).click();
 
-    // Wait for confirmation or error (page title or heading change)
+    // Wait for the amount input to appear inside the expanded form
+    await this.page.waitForSelector('#edit-amount', { timeout: 8_000 });
+    await this.page.fill('#edit-amount', amountGbp.toFixed(2));
+
+    // Submit via Parent Account
+    await this.page.getByRole('button', { name: /Pay by Parent Account/i }).click();
+
+    // Successful payment redirects to PostPaymentReceipt.aspx
     try {
-      await this.page.waitForURL(/confirmation|receipt|success|Default/i, { timeout: 15_000 });
-      return { success: true, message: `Top-up of £${amountGbp.toFixed(2)} submitted successfully.` };
+      await this.page.waitForURL(/PostPaymentReceipt/i, { timeout: 20_000 });
+
+      // Extract new balance from the receipt table
+      const receiptText = await this.page.locator('table').first().textContent().catch(() => '');
+      const balanceMatch = receiptText?.match(/New balance:\s*£([\d.]+)/);
+      const newBalanceGbp = balanceMatch ? parseFloat(balanceMatch[1]) : undefined;
+
+      return {
+        success: true,
+        message: `Top-up of £${amountGbp.toFixed(2)} submitted successfully.`,
+        newBalanceGbp,
+      };
     } catch {
-      const heading = await this.page.$eval('h2, h3', (el) => el.textContent?.trim() ?? '').catch(() => '');
-      return { success: false, message: heading || 'Top-up may have failed — check Parent Account.' };
+      const alertText = await this.page
+        .$eval('[role="alert"]', (el) => el.textContent?.trim() ?? '')
+        .catch(() => '');
+      return { success: false, message: alertText || 'Top-up may have failed — check Parent Account.' };
     }
   }
 }
-

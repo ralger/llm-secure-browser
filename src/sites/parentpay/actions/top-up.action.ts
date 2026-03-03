@@ -1,11 +1,10 @@
 import { ICredentialProvider } from '../../../core/credentials/index.js';
-import { ChildSummaryPage, TopUpResult } from '../pages/dashboard.page.js';
+import { PaymentItemsPage, TopUpResult } from '../pages/dashboard.page.js';
 import { ensureLoggedIn } from './login.action.js';
-import { PARENTPAY_CONFIG } from '../config.js';
 
 export interface TopUpOptions {
   consumerId: string;
-  /** Amount in GBP. Minimum £0.01 (system), but school may require £5 minimum. */
+  /** Amount in GBP. Minimum £0.01 (system), but school may recommend £5 minimum. */
   amountGbp: number;
 }
 
@@ -24,18 +23,9 @@ export async function topUp(
 
   const { page, basePath } = await ensureLoggedIn(credentialProvider);
   try {
-    const summaryPage = new ChildSummaryPage(page, basePath);
-    await summaryPage.navigate(options.consumerId);
-
-    const dinnerItem = await summaryPage.getDinnerMoneyItem();
-    if (!dinnerItem) {
-      return {
-        success: false,
-        message: `No "${PARENTPAY_CONFIG.selectors.childSummary.dinnerMoneyItemName}" payment item found for consumerId ${options.consumerId}`,
-      };
-    }
-
-    return await summaryPage.topUpByParentAccount(dinnerItem.itemId, options.amountGbp);
+    const paymentItemsPage = new PaymentItemsPage(page, basePath);
+    await paymentItemsPage.navigate(options.consumerId);
+    return await paymentItemsPage.topUpDinnerMoney(options.amountGbp);
   } finally {
     await page.close();
   }
