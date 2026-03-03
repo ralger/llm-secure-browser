@@ -71,6 +71,7 @@ export const PARENTPAY_CONFIG = {
   /** URL path builders — call after extracting basePath from post-login URL */
   paths: {
     home: (base: string) => `${base}Payer/Default.aspx`,
+    statements: (base: string) => `${base}MyAccount/Statements/Statements.aspx`,
     childSummary: (base: string, consumerId: string) =>
       `${base}Home/ChildSummary.aspx?ConsumerId=${consumerId}`,
     paymentItems: (base: string, consumerId: string) =>

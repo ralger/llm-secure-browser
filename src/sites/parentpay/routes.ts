@@ -4,6 +4,7 @@ import { SessionStore } from '../../core/session-store.js';
 import { getBalances } from './actions/get-balances.action.js';
 import { getMeals } from './actions/get-meals.action.js';
 import { topUp } from './actions/top-up.action.js';
+import { getParentAccount } from './actions/get-parent-account.action.js';
 import { PARENTPAY_CONFIG } from './config.js';
 
 interface RoutesOptions {
@@ -71,6 +72,41 @@ export const parentPayRoutes: FastifyPluginAsync<RoutesOptions> = async (app, op
       app.log.error(err);
       return reply.internalServerError(
         'Failed to retrieve balances. Check credentials and site availability.',
+      );
+    }
+  });
+
+  app.get('/parent-account', {
+    schema: {
+      tags: ['parentpay'],
+      summary: 'Get Parent Account credit balance',
+      description:
+        'Returns the current Parent Account credit balance by navigating to the Statements page. ' +
+        'The Parent Account is a pre-loaded wallet; topping up children deducts from this balance. ' +
+        'Typical response time: 3–8 seconds.',
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            site: { type: 'string', example: 'parentpay' },
+            balanceGbp: { type: 'number', example: 45.97 },
+            rawText: {
+              type: 'string',
+              example: 'Parent Account credit available: £45.97',
+            },
+          },
+        },
+        500: ErrorSchema,
+      },
+    },
+  }, async (_req, reply) => {
+    try {
+      const result = await getParentAccount(credentialProvider);
+      return { site: siteId, ...result };
+    } catch (err) {
+      app.log.error(err);
+      return reply.internalServerError(
+        'Failed to retrieve Parent Account balance.',
       );
     }
   });
