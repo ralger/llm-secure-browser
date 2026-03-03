@@ -1,0 +1,43 @@
+{
+  "name": "llm-secure-browser",
+  "version": "0.1.0",
+  "description": "Multi-site Playwright browser automation platform exposing a REST API",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node --esm src/index.ts",
+    "lint": "eslint src --ext .ts",
+    "format": "prettier --write src",
+    "test": "vitest run"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "playwright",
+    "automation",
+    "scraping",
+    "rest-api"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@fastify/sensible": "^6.0.4",
+    "dotenv": "^17.3.1",
+    "fastify": "^5.7.4",
+    "playwright": "^1.58.2",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.3",
+    "@typescript-eslint/eslint-plugin": "^8.56.1",
+    "@typescript-eslint/parser": "^8.56.1",
+    "eslint": "^9.39.3",
+    "pino-pretty": "^13.1.3",
+    "prettier": "^3.8.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
