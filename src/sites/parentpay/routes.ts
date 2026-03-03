@@ -4,7 +4,6 @@ import { SessionStore } from '../../core/session-store.js';
 import { getBalances } from './actions/get-balances.action.js';
 import { getMeals } from './actions/get-meals.action.js';
 import { topUp } from './actions/top-up.action.js';
-import { getParentAccount } from './actions/get-parent-account.action.js';
 import { PARENTPAY_CONFIG } from './config.js';
 
 interface RoutesOptions {
@@ -13,13 +12,21 @@ interface RoutesOptions {
 
 // ── Shared schema fragments ─────────────────────────────────────────────────
 
+const ParentAccountSchema = {
+  type: 'object',
+  properties: {
+    balanceGbp: { type: 'number', example: 45.97 },
+    rawText: { type: 'string', example: 'Parent Account credit: £45.97' },
+  },
+};
+
 const ChildInfoSchema = {
   type: 'object',
   properties: {
     name: { type: 'string', example: 'Samuel' },
     consumerId: { type: 'string', example: '22780839' },
-    balanceText: { type: 'string', example: 'Dinner money balance: £0.10' },
-    balanceGbp: { type: 'number', example: 0.1 },
+    balanceText: { type: 'string', example: 'Dinner money balance: £0.12' },
+    balanceGbp: { type: 'number', example: 0.12 },
   },
 };
 
@@ -48,16 +55,17 @@ export const parentPayRoutes: FastifyPluginAsync<RoutesOptions> = async (app, op
   app.get('/balances', {
     schema: {
       tags: ['parentpay'],
-      summary: 'Get dinner money balances',
+      summary: 'Get all balances',
       description:
-        'Returns the current dinner money balance for each child and the Parent Account credit. ' +
-        'Logs in if no active session exists. Typical response time: 5–15 seconds.',
+        'Returns the Parent Account credit balance and each child\'s dinner money balance in a single call. ' +
+        'Both pages (Home and Statements) are loaded in parallel on the same browser context. ' +
+        'Logs in if no active session exists. Typical response time: 8–20 seconds.',
       response: {
         200: {
           type: 'object',
           properties: {
             site: { type: 'string', example: 'parentpay' },
-            parentAccountBalanceGbp: { type: 'number', example: 46.0 },
+            parentAccount: ParentAccountSchema,
             children: { type: 'array', items: ChildInfoSchema },
           },
         },
@@ -72,41 +80,6 @@ export const parentPayRoutes: FastifyPluginAsync<RoutesOptions> = async (app, op
       app.log.error(err);
       return reply.internalServerError(
         'Failed to retrieve balances. Check credentials and site availability.',
-      );
-    }
-  });
-
-  app.get('/parent-account', {
-    schema: {
-      tags: ['parentpay'],
-      summary: 'Get Parent Account credit balance',
-      description:
-        'Returns the current Parent Account credit balance by navigating to the Statements page. ' +
-        'The Parent Account is a pre-loaded wallet; topping up children deducts from this balance. ' +
-        'Typical response time: 3–8 seconds.',
-      response: {
-        200: {
-          type: 'object',
-          properties: {
-            site: { type: 'string', example: 'parentpay' },
-            balanceGbp: { type: 'number', example: 45.97 },
-            rawText: {
-              type: 'string',
-              example: 'Parent Account credit available: £45.97',
-            },
-          },
-        },
-        500: ErrorSchema,
-      },
-    },
-  }, async (_req, reply) => {
-    try {
-      const result = await getParentAccount(credentialProvider);
-      return { site: siteId, ...result };
-    } catch (err) {
-      app.log.error(err);
-      return reply.internalServerError(
-        'Failed to retrieve Parent Account balance.',
       );
     }
   });
@@ -182,7 +155,7 @@ export const parentPayRoutes: FastifyPluginAsync<RoutesOptions> = async (app, op
         description:
           "Transfers money from the Parent Account credit to a child's dinner money balance. " +
           'No new card charge occurs — uses the pre-loaded Parent Account wallet. ' +
-          'Check GET /balances first to confirm parentAccountBalanceGbp is sufficient.',
+          'Check GET /balances first to confirm parentAccount.balanceGbp is sufficient.',
         body: {
           type: 'object',
           required: ['consumerId', 'amountGbp'],
