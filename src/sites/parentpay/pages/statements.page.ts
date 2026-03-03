@@ -1,5 +1,7 @@
 import { Page } from 'playwright';
 import { PARENTPAY_CONFIG } from '../config.js';
+import { isLoginRedirect } from '../actions/login.action.js';
+import { SessionExpiredError } from '../../../core/errors.js';
 
 const { appBaseUrl, paths, selectors } = PARENTPAY_CONFIG;
 
@@ -30,7 +32,8 @@ export class StatementsPage {
   async navigate(): Promise<void> {
     const url = `${appBaseUrl}${paths.statements(this.basePath)}`;
     await this.page.goto(url, { waitUntil: 'domcontentloaded' });
-    // Dismiss OneTrust / Usabilla overlays that may block JS balance injection.
+    if (isLoginRedirect(this.page.url())) throw new SessionExpiredError();
+    // Dismiss OneTrust overlay that may block JS balance injection.
     await this.page
       .locator('#onetrust-accept-btn-handler')
       .click({ timeout: 3_000 })

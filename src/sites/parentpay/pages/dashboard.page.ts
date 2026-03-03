@@ -1,5 +1,7 @@
 import { Page } from 'playwright';
 import { PARENTPAY_CONFIG } from '../config.js';
+import { isLoginRedirect } from '../actions/login.action.js';
+import { SessionExpiredError } from '../../../core/errors.js';
 
 const { appBaseUrl, paths, selectors } = PARENTPAY_CONFIG;
 
@@ -27,6 +29,7 @@ export class PaymentItemsPage {
   async navigate(consumerId: string): Promise<void> {
     const url = `${appBaseUrl}${paths.paymentItems(this.basePath, consumerId)}`;
     await this.page.goto(url, { waitUntil: 'networkidle' });
+    if (isLoginRedirect(this.page.url())) throw new SessionExpiredError();
     await this._dismissOverlays();
   }
 

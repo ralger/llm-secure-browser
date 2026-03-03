@@ -1,5 +1,7 @@
 import { Page } from 'playwright';
 import { PARENTPAY_CONFIG } from '../config.js';
+import { isLoginRedirect } from '../actions/login.action.js';
+import { SessionExpiredError } from '../../../core/errors.js';
 
 const { appBaseUrl, paths } = PARENTPAY_CONFIG;
 
@@ -41,6 +43,7 @@ export class MealsCalendarPage {
   async navigate(consumerId: string, mondayDate: string): Promise<void> {
     const url = `${appBaseUrl}${paths.mealsCalendar(this.basePath, consumerId, mondayDate)}`;
     await this.page.goto(url, { waitUntil: 'domcontentloaded' });
+    if (isLoginRedirect(this.page.url())) throw new SessionExpiredError();
   }
 
   async getMealsForWeek(consumerId: string, mondayDate: string): Promise<WeekMeals> {

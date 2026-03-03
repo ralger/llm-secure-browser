@@ -2,10 +2,39 @@ import { BrowserContext, Page } from 'playwright';
 import { ICredentialProvider } from '../../../core/credentials/index.js';
 import { SessionStore } from '../../../core/session-store.js';
 import { BrowserManager } from '../../../core/browser-manager.js';
+import { SessionExpiredError } from '../../../core/errors.js';
 import { LoginPage } from '../pages/login.page.js';
 import { PARENTPAY_CONFIG } from '../config.js';
 
-const { siteId, credentials } = PARENTPAY_CONFIG;
+const { siteId, credentials, appBaseUrl } = PARENTPAY_CONFIG;
+
+/**
+ * Returns true if the given URL is the ParentPay login page,
+ * meaning the browser was redirected there due to an expired session.
+ */
+export function isLoginRedirect(url: string): boolean {
+  return url.startsWith(`${appBaseUrl}/public`);
+}
+
+/**
+ * Wraps an action so that if a SessionExpiredError is thrown
+ * (login redirect detected mid-navigation), the session is cleared
+ * and the action is retried exactly once with a fresh login.
+ */
+export async function withAutoRelogin<T>(
+  credentialProvider: ICredentialProvider,
+  action: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await action();
+  } catch (err) {
+    if (err instanceof SessionExpiredError) {
+      await SessionStore.getInstance().clearSession(siteId);
+      return action(); // retry once — ensureLoggedIn will create a fresh session
+    }
+    throw err;
+  }
+}
 
 /**
  * Ensures the ParentPay session is authenticated.

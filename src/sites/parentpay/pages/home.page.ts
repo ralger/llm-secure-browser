@@ -1,5 +1,8 @@
 import { Page } from 'playwright';
 import { PARENTPAY_CONFIG } from '../config.js';
+import { isLoginRedirect } from '../actions/login.action.js';
+
+import { SessionExpiredError } from '../../../core/errors.js';
 
 const { selectors, appBaseUrl, paths } = PARENTPAY_CONFIG;
 
@@ -28,6 +31,7 @@ export class HomePage {
   async navigate(): Promise<void> {
     const url = `${appBaseUrl}${paths.home(this.basePath)}`;
     await this.page.goto(url, { waitUntil: 'networkidle' });
+    if (isLoginRedirect(this.page.url())) throw new SessionExpiredError();
   }
 
   async getChildren(): Promise<ChildInfo[]> {
