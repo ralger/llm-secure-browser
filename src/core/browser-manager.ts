@@ -24,7 +24,14 @@ export class BrowserManager {
     if (this.browser) return;
     this.browser = await chromium.launch({
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        // Write renderer memory to /tmp instead of /dev/shm.
+        // This is a safety net for environments where shm_size is not set.
+        // When shm_size IS set (docker-compose), Chrome still prefers /dev/shm.
+        '--disable-dev-shm-usage',
+      ],
       ...options,
     });
 

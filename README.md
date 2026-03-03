@@ -49,51 +49,15 @@ npm run dev
 
 ## API Reference
 
+Interactive Swagger docs are available at **`http://localhost:3000/docs`** when the server is running.
+
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/health` | Liveness probe |
-| `GET` | `/api/parentpay/balances` | Dinner money balances for all children + parent account credit |
-| `GET` | `/api/parentpay/meals/:consumerId?weeks=4` | Taken meal entries for the last N weeks |
-| `POST` | `/api/parentpay/topup` | Top up dinner money from Parent Account credit |
-| `POST` | `/api/parentpay/session/refresh` | Force re-authentication on next request |
+| `GET` | `/api/parentpay/meal-info` | All balances (parent account + both children) + 3 weeks of taken meals |
+| `POST` | `/api/parentpay/meal-topup` | Top up a child's dinner money from Parent Account credit |
 
-### `GET /api/parentpay/balances`
-```json
-{
-  "site": "parentpay",
-  "parentAccountBalanceGbp": 46.00,
-  "children": [
-    { "name": "Samuel", "consumerId": "22780839", "balanceText": "Dinner money balance: £0.10", "balanceGbp": 0.10 },
-    { "name": "Emmanuel", "consumerId": "22780840", "balanceText": "Dinner money balance: £3.00", "balanceGbp": 3.00 }
-  ]
-}
-```
-
-### `GET /api/parentpay/meals/:consumerId?weeks=4`
-```json
-{
-  "site": "parentpay",
-  "consumerId": "22780839",
-  "weeks": 4,
-  "meals": [
-    { "date": "2026-02-23", "dayLabel": "Mon 23 Feb", "session": "morning", "item": "Simple Baguette", "taken": true },
-    { "date": "2026-02-24", "dayLabel": "Tue 24 Feb", "session": "morning", "item": "CHICKEN BURRITO", "taken": true },
-    { "date": "2026-02-24", "dayLabel": "Tue 24 Feb", "session": "lunch",   "item": "FLAVOURED MILK",  "taken": true }
-  ]
-}
-```
-
-### `POST /api/parentpay/topup`
-```json
-// Request body
-{ "consumerId": "22780839", "amountGbp": 5.00 }
-
-// Response
-{ "success": true, "message": "Top-up of £5.00 submitted successfully." }
-```
-
-> **Note:** Top-ups use the pre-loaded Parent Account balance only. No new card charge occurs.
-> Minimum: £0.01 (system). Maximum: £150.00 per transaction.
+See `/docs` for full request/response schemas and curl examples.
 
 ## Credentials
 
@@ -109,13 +73,25 @@ The `ICredentialProvider` interface in `src/core/credentials/provider.interface.
 ## Docker
 
 ```bash
-# Build & run
-docker compose up --build
-
-# Or build the image directly
+# Build image
 docker build -t llm-secure-browser .
-docker run -p 3000:3000 --env-file .env llm-secure-browser
+
+# Run (adjust memory/shm to your host — both are important for Chromium)
+docker run -d \
+  -p 3000:3000 \
+  --shm-size=1gb \
+  --memory=1.5g \
+  -e NODE_ENV=production \
+  --env-file .env \
+  --name llm-secure-browser \
+  llm-secure-browser
+
+# Or via docker compose (sets correct shm_size and mem_limit automatically)
+docker compose up --build
 ```
+
+> **Docker-in-Docker note:** In DinD environments `docker compose up` may fail with a daemon 403.
+> Use `docker build` + `docker run` directly in that case, with the container's IP for curl tests.
 
 ## Adding a New Site
 
