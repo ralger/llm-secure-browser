@@ -2,7 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { ICredentialProvider } from '../../core/credentials/index.js';
 import { SessionStore } from '../../core/session-store.js';
 import { getBalances } from './actions/get-balances.action.js';
-import { getMeals } from './actions/get-meals.action.js';
+import { getAllMeals } from './actions/get-meals.action.js';
 import { topUp } from './actions/top-up.action.js';
 import { PARENTPAY_CONFIG } from './config.js';
 
@@ -84,67 +84,61 @@ export const parentPayRoutes: FastifyPluginAsync<RoutesOptions> = async (app, op
     }
   });
 
-  app.get<{ Params: { consumerId: string }; Querystring: { weeks?: string } }>(
-    '/meals/:consumerId',
-    {
-      schema: {
-        tags: ['parentpay'],
-        summary: 'Get taken meal history',
-        description:
-          'Returns items each child took (morning snacks and lunch) for the last N weeks. ' +
-          'One browser page is loaded per week — allow 5–10 seconds per week requested. ' +
-          'Item prices are not available on the ParentPay front-end.',
-        params: {
-          type: 'object',
-          required: ['consumerId'],
-          properties: {
-            consumerId: {
-              type: 'string',
-              description: 'Child consumer ID (see GET /balances to discover IDs)',
-              example: '22780839',
-            },
-          },
-        },
-        querystring: {
+  app.get('/meals', {
+    schema: {
+      tags: ['parentpay'],
+      summary: 'Get meal history for all children',
+      description:
+        'Returns taken meal entries for every child across the current week plus the previous 2 weeks ' +
+        '(3 weeks total). Children are discovered dynamically from the Home page. ' +
+        'Pages are loaded sequentially with human-like delays to avoid unusual traffic patterns. ' +
+        'Typical response time: 30–60 seconds. Item prices are not available on ParentPay.',
+      response: {
+        200: {
           type: 'object',
           properties: {
-            weeks: {
-              type: 'string',
-              description: 'Number of past weeks to retrieve (default: 4, max: 12)',
-              example: '4',
+            site: { type: 'string', example: 'parentpay' },
+            fetchedAt: { type: 'string', format: 'date-time' },
+            weeksIncluded: { type: 'number', example: 3 },
+            children: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string', example: 'Samuel' },
+                  consumerId: { type: 'string', example: '22780839' },
+                  weeks: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        weekCommencing: { type: 'string', format: 'date', example: '2026-02-23' },
+                        entries: { type: 'array', items: MealEntrySchema },
+                        dayTakenStatus: {
+                          type: 'object',
+                          additionalProperties: { type: 'boolean' },
+                          description: 'Map of day label → whether the day header shows Taken',
+                        },
+                      },
+                    },
+                  },
+                },
+              },
             },
           },
         },
-        response: {
-          200: {
-            type: 'object',
-            properties: {
-              site: { type: 'string', example: 'parentpay' },
-              consumerId: { type: 'string', example: '22780839' },
-              weeks: { type: 'number', example: 4 },
-              meals: { type: 'array', items: MealEntrySchema },
-            },
-          },
-          400: ErrorSchema,
-          500: ErrorSchema,
-        },
+        500: ErrorSchema,
       },
     },
-    async (req, reply) => {
-      const { consumerId } = req.params;
-      const weeks = Math.min(parseInt(req.query.weeks ?? '4', 10), 12);
-      if (isNaN(weeks) || weeks < 1) {
-        return reply.badRequest('weeks must be a positive integer (max 12)');
-      }
-      try {
-        const meals = await getMeals(credentialProvider, { consumerId, weeks });
-        return { site: siteId, consumerId, weeks, meals };
-      } catch (err) {
-        app.log.error(err);
-        return reply.internalServerError('Failed to retrieve meal data.');
-      }
-    },
-  );
+  }, async (_req, reply) => {
+    try {
+      const result = await getAllMeals(credentialProvider);
+      return { site: siteId, ...result };
+    } catch (err) {
+      app.log.error(err);
+      return reply.internalServerError('Failed to retrieve meal data.');
+    }
+  });
 
   app.post<{ Body: { consumerId: string; amountGbp: number } }>(
     '/topup',
