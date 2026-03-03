@@ -56,10 +56,23 @@ export const parentPayRoutes: FastifyPluginAsync<RoutesOptions> = async (app, op
     schema: {
       tags: ['parentpay'],
       summary: 'Get all balances',
-      description:
-        'Returns the Parent Account credit balance and each child\'s dinner money balance in a single call. ' +
-        'Both pages (Home and Statements) are loaded in parallel on the same browser context. ' +
-        'Logs in if no active session exists. Typical response time: 8–20 seconds.',
+      description: `
+Returns the **Parent Account credit balance** and every **child's dinner money balance** in a single call.
+The Home page and Statements page are loaded in parallel on the same browser context.
+
+Logs in automatically if no active session exists.
+
+**Typical response time:** 8–20 s (first call includes login; ~5 s on warm session)
+
+**Notes**
+- \`parentAccount.balanceGbp\` is the wallet that funds top-ups — check this before calling \`POST /topup\`
+- \`children[].consumerId\` values are needed for \`POST /topup\`
+- Children are discovered dynamically from the Home page, so new children appear automatically
+
+\`\`\`bash
+curl http://localhost:3000/api/parentpay/balances
+\`\`\`
+`.trim(),
       response: {
         200: {
           type: 'object',
@@ -88,11 +101,39 @@ export const parentPayRoutes: FastifyPluginAsync<RoutesOptions> = async (app, op
     schema: {
       tags: ['parentpay'],
       summary: 'Get meal history for all children',
-      description:
-        'Returns taken meal entries for every child across the current week plus the previous 2 weeks ' +
-        '(3 weeks total). Children are discovered dynamically from the Home page. ' +
-        'Pages are loaded sequentially with human-like delays to avoid unusual traffic patterns. ' +
-        'Typical response time: 30–60 seconds. Item prices are not available on ParentPay.',
+      description: `
+Returns taken meal entries for **all children** across the **current week plus the previous 2 weeks** (3 weeks total).
+Children are discovered dynamically — no parameters needed.
+
+Pages are loaded **strictly sequentially** with randomised human-like delays (1.2–2 s between weeks,
+2.5–3.5 s between children) to avoid unusual traffic patterns on the ParentPay site.
+
+**Typical response time:** 30–60 s
+
+**Response structure**
+
+Each child has a \`weeks\` array (oldest → newest). Each week contains:
+
+| Field | Description |
+|-------|-------------|
+| \`weekCommencing\` | ISO date of the Monday that starts the week |
+| \`entries\` | Items actually taken that week (only taken items are included) |
+| \`dayTakenStatus\` | Map of day label → whether the calendar header shows "Taken" for that day |
+
+Each entry's \`session\` field:
+
+| Value | Meaning |
+|-------|---------|
+| \`"morning"\` | Taken during the morning break period |
+| \`"lunch"\` | Taken during the lunch period |
+| \`"unknown"\` | Could not be determined from the calendar layout |
+
+**Item prices are not available** — the ParentPay UI does not expose per-item costs.
+
+\`\`\`bash
+curl http://localhost:3000/api/parentpay/meals
+\`\`\`
+`.trim(),
       response: {
         200: {
           type: 'object',
@@ -146,10 +187,22 @@ export const parentPayRoutes: FastifyPluginAsync<RoutesOptions> = async (app, op
       schema: {
         tags: ['parentpay'],
         summary: 'Top up dinner money',
-        description:
-          "Transfers money from the Parent Account credit to a child's dinner money balance. " +
-          'No new card charge occurs — uses the pre-loaded Parent Account wallet. ' +
-          'Check GET /balances first to confirm parentAccount.balanceGbp is sufficient.',
+        description: `
+Transfers money from the **Parent Account credit** to a child's dinner money balance.
+
+- **No new card charge** — uses the pre-loaded Parent Account wallet only
+- Always check \`parentAccount.balanceGbp\` from \`GET /balances\` before calling this
+- The school recommends a minimum top-up of £5.00; the system technically allows £0.01
+- Returns \`newBalanceGbp\` parsed from the confirmation receipt page
+
+**Typical response time:** 10–20 s
+
+\`\`\`bash
+curl -X POST http://localhost:3000/api/parentpay/topup \\
+  -H "Content-Type: application/json" \\
+  -d '{"consumerId":"22780839","amountGbp":5.00}'
+\`\`\`
+`.trim(),
         body: {
           type: 'object',
           required: ['consumerId', 'amountGbp'],
@@ -210,10 +263,21 @@ export const parentPayRoutes: FastifyPluginAsync<RoutesOptions> = async (app, op
     schema: {
       tags: ['parentpay'],
       summary: 'Force session re-authentication',
-      description:
-        'Closes the cached Playwright browser context for ParentPay and removes it from the ' +
-        'session store. The next request to any ParentPay endpoint will trigger a fresh login. ' +
-        'Use this if the session has become stale (e.g. after a ParentPay server-side timeout).',
+      description: `
+Closes the cached Playwright BrowserContext for ParentPay and removes it from the session store.
+The **next request** to any \`/api/parentpay/*\` endpoint will automatically perform a fresh login.
+
+**When to call this:**
+- Other endpoints are returning unexpected errors (session may have expired server-side)
+- After a ParentPay maintenance window
+- If you suspect login cookies have been invalidated
+
+You do **not** need to call a login endpoint separately — re-authentication is fully automatic.
+
+\`\`\`bash
+curl -X POST http://localhost:3000/api/parentpay/session/refresh
+\`\`\`
+`.trim(),
       response: {
         200: {
           type: 'object',
