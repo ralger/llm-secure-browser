@@ -20,6 +20,7 @@ async function main() {
   const shutdown = async () => {
     app.log.info('Shutting down...');
     await app.close();
+    SessionStore.getInstance().stopReaper();
     await SessionStore.getInstance().clearAll();
     await BrowserManager.getInstance().teardown();
     process.exit(0);
