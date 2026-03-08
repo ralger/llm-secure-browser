@@ -4,8 +4,9 @@ import type { SitePlugin } from './core/site-plugin.interface.js';
 // Import site plugins here as they are added
 import { parentPaySite } from './sites/parentpay/index.js';
 import { mcasSite } from './sites/mcas/index.js';
+import { playstationSite } from './sites/playstation/index.js';
 
-const SITES: SitePlugin[] = [parentPaySite, mcasSite];
+const SITES: SitePlugin[] = [parentPaySite, mcasSite, playstationSite];
 
 /**
  * Registers all site plugins with the Fastify application.

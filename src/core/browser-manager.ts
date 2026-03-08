@@ -31,6 +31,9 @@ export class BrowserManager {
         // This is a safety net for environments where shm_size is not set.
         // When shm_size IS set (docker-compose), Chrome still prefers /dev/shm.
         '--disable-dev-shm-usage',
+        // Suppress the navigator.webdriver flag so bot-detection scripts don't
+        // immediately identify the browser as headless automation.
+        '--disable-blink-features=AutomationControlled',
       ],
       ...options,
     });
@@ -48,10 +51,20 @@ export class BrowserManager {
     if (!this.browser || !this.browser.isConnected()) {
       await this.launch();
     }
-    return this.browser!.newContext({
+    const context = await this.browser!.newContext({
+      // A realistic Windows/Chrome UA reduces the chance of bot-detection rejections
+      // from sites that fingerprint the User-Agent string (e.g. Sony's Kasada shield).
       userAgent:
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      locale: 'en-GB',
+      timezoneId: 'Europe/London',
+      viewport: { width: 1280, height: 800 },
     });
+    // Remove the navigator.webdriver flag that headless Chrome sets by default.
+    await context.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => false });
+    });
+    return context;
   }
 
   async teardown(): Promise<void> {
