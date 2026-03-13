@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { ICredentialProvider } from '../../core/credentials/index.js';
 import { getMealInfo } from './actions/get-meal-info.action.js';
-import { topUp } from './actions/top-up.action.js';
+import { topUp, TopUpRequest } from './actions/top-up.action.js';
 import { PARENTPAY_CONFIG } from './config.js';
 
 interface RoutesOptions {
@@ -136,45 +136,59 @@ curl http://localhost:3000/api/parentpay/meal-info
   });
 
   // ── POST /meal-topup ───────────────────────────────────────────────────────
-  app.post<{ Body: { consumerId: string; amountGbp: number } }>(
+  app.post<{ Body: { topUps: TopUpRequest[] } }>(
     '/meal-topup',
     {
       schema: {
         tags: ['parentpay'],
-        summary: 'Top up a child\'s dinner money',
+        summary: 'Top up one or more children\'s dinner money (multi-child)',
         description: `
-Transfers money from the **Parent Account credit** to a child's dinner money balance.
+Transfers money from the **Parent Account credit** to one or more children's dinner money
+balances in a single request. Children are processed **sequentially** through the browser.
 
 - **No new card charge** — debits the pre-loaded Parent Account wallet only
 - Check \`parentAccount.balanceGbp\` from \`GET /meal-info\` before calling this
-- \`consumerId\` comes from \`GET /meal-info\` \`children[].consumerId\`
-- The school recommends a minimum of £5.00; the system enforces £0.01
-- Returns \`newBalanceGbp\` parsed from the confirmation receipt page
+- \`consumerId\` values come from \`GET /meal-info\` \`children[].consumerId\`
+- **Maximum per child: £${PARENTPAY_CONFIG.topUp.maxAmountGbp.toFixed(2)}** — all items are validated before any browser work begins
+- The system enforces a minimum of £0.01 per child
+- After all top-ups are attempted, live balances are read from the home page and returned
+- Per-child success/failure is reported in \`topUps[]\`; HTTP 200 is returned even for partial failures
 - Automatically re-authenticates if the session has expired
 
-**Typical response time:** 10–20 s
+**Typical response time:** 15–40 s for two children
 
 \`\`\`bash
 curl -X POST http://localhost:3000/api/parentpay/meal-topup \\
   -H "Content-Type: application/json" \\
-  -d '{"consumerId":"22780839","amountGbp":5.00}'
+  -d '{"topUps":[{"consumerId":"22780839","amountGbp":5.00},{"consumerId":"22780840","amountGbp":5.00}]}'
 \`\`\`
 `.trim(),
         body: {
           type: 'object',
-          required: ['consumerId', 'amountGbp'],
+          required: ['topUps'],
           properties: {
-            consumerId: {
-              type: 'string',
-              description: 'Child consumer ID from GET /meal-info children[].consumerId',
-              example: '22780839',
-            },
-            amountGbp: {
-              type: 'number',
-              minimum: 0.01,
-              maximum: 150,
-              description: 'Amount in GBP (min £0.01 / max £150.00 per transaction)',
-              example: 5.0,
+            topUps: {
+              type: 'array',
+              minItems: 1,
+              description: 'One or more top-up requests. Processed sequentially.',
+              items: {
+                type: 'object',
+                required: ['consumerId', 'amountGbp'],
+                properties: {
+                  consumerId: {
+                    type: 'string',
+                    description: 'Child consumer ID from GET /meal-info children[].consumerId',
+                    example: '22780839',
+                  },
+                  amountGbp: {
+                    type: 'number',
+                    minimum: 0.01,
+                    maximum: PARENTPAY_CONFIG.topUp.maxAmountGbp,
+                    description: `Amount in GBP (min £0.01 / max £${PARENTPAY_CONFIG.topUp.maxAmountGbp.toFixed(2)} per child)`,
+                    example: 5.0,
+                  },
+                },
+              },
             },
           },
         },
@@ -182,29 +196,69 @@ curl -X POST http://localhost:3000/api/parentpay/meal-topup \\
           200: {
             type: 'object',
             properties: {
-              success: { type: 'boolean', example: true },
-              message: { type: 'string', example: 'Top-up of £5.00 submitted successfully.' },
-              newBalanceGbp: { type: 'number', nullable: true },
+              site: { type: 'string', example: 'parentpay' },
+              processedAt: { type: 'string', format: 'date-time' },
+              topUps: {
+                type: 'array',
+                description: 'Per-child top-up outcome. Check success flag for each entry.',
+                items: {
+                  type: 'object',
+                  properties: {
+                    consumerId: { type: 'string', example: '22780839' },
+                    success: { type: 'boolean', example: true },
+                    message: { type: 'string', example: 'Top-up of £5.00 submitted successfully.' },
+                    receiptBalanceGbp: {
+                      type: 'number',
+                      nullable: true,
+                      description: 'New balance from the confirmation receipt, if available',
+                      example: 6.50,
+                    },
+                  },
+                },
+              },
+              balances: {
+                type: 'array',
+                description: 'Live balances read from the home page after all top-ups.',
+                items: {
+                  type: 'object',
+                  properties: {
+                    name: { type: 'string', example: 'Samuel' },
+                    consumerId: { type: 'string', example: '22780839' },
+                    balanceGbp: { type: 'number', example: 6.50 },
+                    balanceText: { type: 'string', example: 'Dinner money balance: £6.50' },
+                  },
+                },
+              },
             },
           },
           400: ErrorSchema,
-          422: ErrorSchema,
           500: ErrorSchema,
         },
       },
     },
     async (req, reply) => {
-      const { consumerId, amountGbp } = req.body ?? {};
-      if (!consumerId || typeof amountGbp !== 'number') {
-        return reply.badRequest('Body must contain consumerId (string) and amountGbp (number)');
+      const { topUps } = req.body ?? {};
+      if (!Array.isArray(topUps) || topUps.length === 0) {
+        return reply.badRequest('Body must contain a non-empty "topUps" array');
+      }
+      for (const item of topUps) {
+        if (!item.consumerId || typeof item.amountGbp !== 'number') {
+          return reply.badRequest('Each topUps entry must have consumerId (string) and amountGbp (number)');
+        }
       }
       try {
-        const result = await topUp(credentialProvider, { consumerId, amountGbp });
-        if (!result.success) {
-          return reply.status(422).send({ error: result.message });
-        }
-        return result;
+        const result = await topUp(credentialProvider, topUps);
+        return { site: siteId, ...result };
       } catch (err) {
+        if (err instanceof Error) {
+          // Validation errors thrown synchronously from topUp() before any browser work
+          const isValidationError =
+            err.message.includes('exceeds the maximum') ||
+            err.message.includes('must be between');
+          if (isValidationError) {
+            return reply.badRequest(err.message);
+          }
+        }
         app.log.error(err);
         return reply.internalServerError(
           'Top-up failed. Check site availability and Parent Account balance.',

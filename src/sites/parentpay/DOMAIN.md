@@ -174,14 +174,22 @@ This is the most complex page to parse. URL:
 
 ## Top-Up Flow
 
+Multi-child sequential processing:
+
 ```
-1. Navigate to /{BASE}/Home/ChildSummary.aspx?ConsumerId={id}
-2. Find the "View" button whose id = the dinner money payment item ID
-   - Locate via: button[id] where id is numeric AND adjacent dl contains "School Dinner Money"
-3. Click the View button → a payment panel slides into view
-4. Fill the amount input (selector: #edit-amount or input[aria-label*="amount"])
-5. Click "Pay by Parent Account" button
-6. Wait for URL to change to a confirmation/receipt page
+1. Validate all requests (amount > 0, amount ≤ £5.00 max) — reject immediately if any fail
+2. For each child in the request (sequentially):
+   a. Navigate to /{BASE}/Home/PaymentItems/PaymentItems.aspx?consumerId={id}
+   b. Find the "View" button whose id = the dinner money payment item ID
+      - Locate via: button[id] where id is numeric AND adjacent dl contains "School Dinner Money"
+   c. Click the View button → a payment panel slides into view
+   d. Fill the amount input (selector: #edit-amount or input[aria-label*="amount"])
+   e. Click "Pay by Parent Account" button
+   f. Wait for URL to change to PostPaymentReceipt.aspx → extract new balance
+   g. Record per-child success/fail result
+3. Navigate to /{BASE}/Payer/Default.aspx (home page)
+4. Read live balances for all children via getChildren()
+5. Return combined response: { topUps[], balances[] }
 ```
 
 ### Confirmation page

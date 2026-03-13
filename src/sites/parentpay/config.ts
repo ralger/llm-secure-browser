@@ -68,6 +68,12 @@ export const PARENTPAY_CONFIG = {
     },
   },
 
+  /** Top-up constraints */
+  topUp: {
+    /** Maximum amount in GBP that can be topped up per child per request. */
+    maxAmountGbp: 5.00,
+  },
+
   /** URL path builders — call after extracting basePath from post-login URL */
   paths: {
     home: (base: string) => `${base}Payer/Default.aspx`,
