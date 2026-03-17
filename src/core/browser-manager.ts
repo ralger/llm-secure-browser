@@ -3,7 +3,9 @@ import { chromium, Browser, BrowserContext, LaunchOptions } from 'playwright';
 /**
  * Singleton manager for the Playwright Browser instance.
  *
- * - Launches a single headless Chromium instance shared across all sites.
+ * - Launches a single Chromium instance shared across all sites.
+ *   Headless by default; set `BROWSER_HEADLESS=false` for headed mode (required
+ *   by sites that use Cloudflare challenge, e.g. ChurchSuite — run with xvfb-run).
  * - Each site gets its own isolated BrowserContext (separate cookies/storage).
  * - Registers SIGTERM/SIGINT handlers for graceful container shutdown.
  */
@@ -23,7 +25,7 @@ export class BrowserManager {
   async launch(options: LaunchOptions = {}): Promise<void> {
     if (this.browser) return;
     this.browser = await chromium.launch({
-      headless: true,
+      headless: process.env.BROWSER_HEADLESS !== 'false',
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',

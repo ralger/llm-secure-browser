@@ -11,9 +11,13 @@ services:
     restart: unless-stopped
     environment:
       - NODE_ENV=production
+      # Headed Chromium (required for Cloudflare bypass on ChurchSuite).
+      # Xvfb is started by start.sh — this env var tells BrowserManager to
+      # launch Chrome with headless:false so the virtual display is used.
+      - BROWSER_HEADLESS=false
     # Chromium uses /dev/shm (shared memory) for rendering buffers. The Docker
     # default of 64 MB is far too small and causes tab crashes on complex pages.
-    # 1 GB is comfortable for single-instance headless use.
+    # 1 GB is comfortable for single-instance headed+headless use.
     shm_size: '1gb'
-    # Memory limits: Node.js ~150 MB + Chromium ~400 MB + page content + headroom.
+    # Memory limits: Node.js ~150 MB + Chromium ~500 MB (headed) + page content + headroom.
     mem_limit: 1.5g
